@@ -497,7 +497,12 @@
       }
       const matrix=sprites[kind]||sprites.skeleton;
       if(!options?.hideHealth && (kind==='hero'||entity.hp<entity.maxHp)) this.health(x,y-matrix.length*scale-8,entity.hp,entity.maxHp,kind==='hero'?31:kind==='boss'?41:22,entity.side==='enemy'?'#cb857c':'#9dbe82');
-      if(entity.slowed||entity.slowTime>0) {rect(ctx,x-8,y-1,3,3,'#bce0dd');rect(ctx,x+6,y-2,3,3,'#94c8cb');}
+      if(entity.slowed||entity.slowTime>0) {
+        rect(ctx,x-8,y-1,3,3,'#bce0dd');rect(ctx,x+6,y-2,3,3,'#94c8cb');
+        const icyY=y-matrix.length*scale-16;
+        rect(ctx,x-3,icyY,7,1,'#d8f5f1');rect(ctx,x,icyY-3,1,7,'#d8f5f1');
+        rect(ctx,x-2,icyY-2,1,1,'#94c8cb');rect(ctx,x+2,icyY+2,1,1,'#94c8cb');
+      }
     }
     gear(kind,x,y,face,time,swing,s,staffId) {
       const c=this.ctx, arm=x+face*8*s;
@@ -588,6 +593,7 @@
       const c=this.ctx,x=effect.x*SCALE-camera,y=GROUND+(effect.y||0)*SCALE;
       const progress=clamp(1-(effect.life||0)/(effect.maxLife||1),0,1);
       const kind=effect.kind;
+      if(kind==='number') return;
       if(groundOnly) {
         if(kind==='frost'||kind==='heal'){
           const radius=(effect.radius||120)*SCALE;
@@ -632,19 +638,58 @@
         ctxAlpha(c,.55,()=>rect(c,x,y,biome==='night'?1:3,1,biome==='night'?'#cbdba0':p.leafLight));
       }
     }
+    viewBounds() {
+      const width=Math.min(WIDTH,HEIGHT*(this.canvas.clientWidth||WIDTH)/(this.canvas.clientHeight||HEIGHT));
+      return {left:(WIDTH-width)/2,right:(WIDTH+width)/2,width};
+    }
+    combatNumbers(effects,camera) {
+      const c=this.ctx,occupied=[],view=this.viewBounds();
+      c.save();c.font='bold 8px monospace';c.textAlign='center';c.textBaseline='middle';c.lineWidth=2;c.strokeStyle='#172820';
+      for(const effect of effects) {
+        if(effect.kind!=='number'||effect.life<=0)continue;
+        const screenX=effect.x*SCALE-camera;
+        if(screenX<view.left-20||screenX>view.right+20)continue;
+        const label=(effect.healing?'+':'-')+Math.ceil(effect.amount),width=c.measureText(label).width+5;
+        const x=Math.round(clamp(screenX,view.left+width/2+3,view.right-width/2-3));
+        let y=Math.round(clamp(GROUND+effect.y*SCALE-22-effect.age/effect.maxLife*14,85,HEIGHT-14));
+        const overlaps=()=>occupied.some(box=>Math.abs(box.x-x)<(box.width+width)/2&&Math.abs(box.y-y)<10);
+        while(y>85&&overlaps())y=Math.max(85,y-10);
+        if(overlaps())continue;
+        occupied.push({x,y,width});
+        c.globalAlpha=Math.min(1,effect.life/.18);c.fillStyle=effect.healing?'#b9eba0':effect.side==='ally'?'#ffa697':'#f3d38b';
+        c.strokeText(label,x,y);c.fillText(label,x,y);
+      }
+      c.restore();
+    }
+    threatStatus(state) {
+      const c=this.ctx,boss=state.units.find(unit=>unit.kind==='boss'&&unit.hp>0);
+      if(!boss&&!state.tower?.shielded)return;
+      const left=185,top=53,width=190;
+      ctxAlpha(c,.9,()=>rect(c,left,top,width,30,'#172824'));
+      rect(c,left,top,2,30,boss?'#bf7c8b':'#8ebfc9');
+      c.save();c.font='bold 10px sans-serif';c.fillStyle=boss?'#efd2ce':'#c6e3e1';c.textAlign='left';
+      c.fillText(boss?'暗影领主':'据点护盾 · 击败领主解除',left+8,top+14);
+      if(boss) {
+        c.font='bold 8px monospace';c.textAlign='right';c.fillText(`${Math.ceil(boss.hp)} / ${boss.maxHp}`,left+width-8,top+14);
+        rect(c,left+8,top+21,width-16,4,'#38403a');rect(c,left+8,top+21,(width-16)*clamp(boss.hp/boss.maxHp,0,1),4,'#c6808c');
+      } else {
+        c.font='7px sans-serif';c.fillStyle='#8aa6a4';c.fillText('先击败守护者，再摧毁据点',left+8,top+24);
+      }
+      c.restore();
+    }
     navigation(state,camera) {
       const c=this.ctx,hero=state.hero;
       if(!hero)return;
-      const width=96,left=WIDTH-111,top=13,total=state.worldWidth||2400;
+      const view=this.viewBounds(),width=96,left=view.right-111,top=13,total=state.worldWidth||2400;
       ctxAlpha(c,.78,()=>rect(c,left-7,top-7,width+14,24,'#263c36'));
       rect(c,left,top+5,width,2,'#7a8970');rect(c,left,top+4,2,4,'#d6c188');rect(c,left+width-2,top+2,3,6,'#a17e9e');
-      const visibleWidth=WIDTH/SCALE/total*width,visibleX=camera/SCALE/total*width;
+      const visibleWidth=view.width/SCALE/total*width,visibleX=(camera+view.left)/SCALE/total*width;
       rect(c,left+visibleX,top+9,visibleWidth,1,'#637d71');
       for(const unit of state.units||[]){rect(c,left+unit.x/total*width,top+4,1,3,unit.side==='enemy'?'#c493a0':'#96bba8');}
       rect(c,left+hero.x/total*width-1,top+2,3,6,'#f1d991');
       const tower=state.tower;
-      if(tower && tower.x*SCALE-camera>WIDTH-25) {
-        c.fillStyle='#d5debb';c.font='7px sans-serif';c.textAlign='right';c.fillText('敌方据点  ›',WIDTH-13,top+27);c.textAlign='left';
+      if(tower && tower.x*SCALE-camera>view.right-25) {
+        c.fillStyle='#d5debb';c.font='7px sans-serif';c.textAlign='right';c.fillText('敌方据点  ›',view.right-13,top+27);c.textAlign='left';
       }
     }
     render(state,dt) {
@@ -666,7 +711,9 @@
       for(const projectile of state.projectiles||[])this.projectile(projectile,camera,time);
       for(const effect of state.effects||[])this.effect(effect,camera,time,false);
       this.foreground(time,p,camera,biome);
+      this.combatNumbers(state.effects||[],camera);
       this.navigation(state,camera);
+      this.threatStatus(state);
       if(state.hero.hp<=0) {
         ctxAlpha(this.ctx,.3,()=>rect(this.ctx,0,0,WIDTH,HEIGHT,'#242f36'));
       }

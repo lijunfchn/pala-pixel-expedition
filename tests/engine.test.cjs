@@ -6,15 +6,15 @@ function advance(engine, seconds, input) {
   for (let remaining = seconds; remaining > 0.00001; remaining -= 0.2) engine.update(Math.min(0.2, remaining), input);
 }
 
-function playLevel(level, upgrades) {
-  const game = new Pala.Engine({ level, upgrades });
+function playLevel(level, upgrades, equipment) {
+  const game = new Pala.Engine({ level, upgrades, equipment });
   let ticks = 0;
   while (game.state.phase === 'playing' && ticks++ < 1500) {
     const state = game.state;
     const allies = state.units.filter((unit) => unit.side === 'ally');
     const enemies = state.units.filter((unit) => unit.side === 'enemy');
-    const tanks = allies.filter((unit) => unit.kind === 'mouse' || unit.kind === 'bear');
-    const ranged = allies.filter((unit) => unit.kind === 'rabbit' || unit.kind === 'fox');
+    const tanks = allies.filter((unit) => ['mouse', 'bear', 'hedgehog', 'boar'].includes(unit.kind));
+    const ranged = allies.filter((unit) => ['rabbit', 'fox', 'squirrel'].includes(unit.kind));
     if (!tanks.length) game.summon('mouse');
     else if (!ranged.length) game.summon('rabbit');
     else if (level >= 3 && !tanks.some((unit) => unit.kind === 'bear')) game.summon('bear');
@@ -110,6 +110,69 @@ test('new companions provide healing, thorns, splash and charge', () => {
   game.attack(boar, target);
   assert.ok(target.x > before);
   assert.ok(target.hp < target.maxHp);
+});
+
+test('survival rotates tactical formations and brings later waves closer within the arena', () => {
+  const events = [];
+  const game = new Pala.Engine({ mode: 'survival', onEvent: event => events.push(event) });
+  const allowed = [null, ['skeleton', 'bat', 'wraith', 'hound', 'bomber'], ['skeleton', 'slime', 'brute', 'sentinel'], ['skeleton', 'necromancer', 'archer', 'shaman']];
+  const names = ['常规', '疾袭', '重甲', '秘术'];
+  for (let index = 0; index < 4; index++) {
+    game.spawnQueue = [];
+    game.startWave();
+    assert.equal(game.state.formationName, names[index]);
+    assert.ok(game.state.formationDescription.length > 0);
+    assert.equal(events.at(-1).formationName, names[index]);
+    if (allowed[index]) assert.ok(game.spawnQueue.every(spawn => allowed[index].includes(spawn.kind)));
+    assert.ok(game.spawnQueue.every(spawn => index ? spawn.x === game.state.hero.x + 600 : spawn.x === undefined));
+  }
+  game.state.hero.x = game.state.worldWidth - 200;
+  game.spawnQueue = [];
+  game.startWave();
+  assert.ok(game.spawnQueue.some(spawn => spawn.kind === 'boss'));
+  assert.ok(game.spawnQueue.every(spawn => spawn.x <= game.state.worldWidth - 80));
+  const campaign = new Pala.Engine({ level: 19 });
+  campaign.startWave();
+  assert.ok(campaign.spawnQueue.every(spawn => spawn.x === undefined));
+  assert.deepEqual(Pala.enemyRoster(1), ['skeleton', 'skeleton', 'slime']);
+  assert.ok(Pala.enemyRoster(24).includes('shaman'));
+});
+
+test('charge knockback stays inside the smaller survival arena', () => {
+  const game = new Pala.Engine({ mode: 'survival' });
+  game.state.food = 100;
+  game.summon('boar');
+  const boar = game.state.units.find(unit => unit.kind === 'boar');
+  boar.x = 1360;
+  const sentinel = game.spawnEnemy('sentinel', 1400);
+  game.attack(boar, sentinel);
+  assert.ok(sentinel.hp > 0);
+  assert.equal(sentinel.x, game.state.worldWidth - 80);
+});
+
+test('combat numbers show actual health changes, merge rapid hits and stay bounded', () => {
+  const events = [];
+  const game = new Pala.Engine({ onEvent: event => events.push(event) });
+  const tower = game.state.tower;
+  game.damage(tower, tower.maxHp * 3, game.state.hero);
+  const towerNumber = game.state.effects.find(effect => effect.kind === 'number' && effect.entityId === tower.id);
+  assert.equal(towerNumber.amount, tower.maxHp / 2);
+  assert.equal(towerNumber.side, 'enemy');
+  assert.equal(towerNumber.healing, false);
+  assert.equal(events.find(event => event.type === 'hit' && event.targetId === tower.id).damage, tower.maxHp / 2);
+  game.state.hero.hp -= 37;
+  game.cast('heal');
+  const healingNumber = game.state.effects.find(effect => effect.kind === 'number' && effect.entityId === 'hero');
+  assert.equal(healingNumber.amount, 37);
+  assert.equal(healingNumber.healing, true);
+  assert.equal(healingNumber.side, 'ally');
+  const skeleton = game.spawnEnemy('skeleton', 900);
+  game.damage(skeleton, 1, game.state.hero);
+  game.damage(skeleton, 1, game.state.hero);
+  assert.equal(game.state.effects.filter(effect => effect.kind === 'number' && effect.entityId === skeleton.id).length, 1);
+  assert.equal(game.state.effects.find(effect => effect.kind === 'number' && effect.entityId === skeleton.id).amount, 2);
+  for (let index = 0; index < 40; index++) game.damage(game.spawnEnemy('skeleton', 1000), 1, game.state.hero);
+  assert.equal(game.state.effects.filter(effect => effect.kind === 'number').length, 32);
 });
 
 test('equipped staff and ring specialize spells and battle resources', () => {
@@ -377,6 +440,35 @@ test('a fixed seed produces the same battle', () => {
   advance(first, 20, { move: 1 });
   advance(second, 20, { move: 1 });
   assert.deepEqual(first.state, second.state);
+});
+
+test('campaign is completable using only first-clear income and affordable upgrades and equipment', () => {
+  let coins = 120;
+  const upgrades = { vitality: 0, leadership: 0, provision: 0, focus: 0 };
+  const equipment = { staff: 'glimmer_staff', ring: 'traveler_ring' };
+  for (let level = 1; level <= 24; level++) {
+    for (const id of ['harvest_ring', 'storm_staff']) {
+      const item = Pala.DATA.equipment.find(item => item.id === id);
+      if (level >= item.unlockLevel && equipment[item.slot] !== id && coins >= item.cost) {
+        coins -= item.cost;
+        equipment[item.slot] = id;
+      }
+    }
+    while (true) {
+      const next = Pala.DATA.upgrades.filter(item => upgrades[item.id] < item.maxLevel)
+        .map(item => ({ id: item.id, cost: Pala.upgradeCost(item.id, upgrades[item.id]) })).sort((a, b) => a.cost - b.cost)[0];
+      if (!next || next.cost > coins) break;
+      coins -= next.cost;
+      upgrades[next.id]++;
+    }
+    assert.ok(coins >= 0);
+    const game = playLevel(level, upgrades, equipment);
+    assert.equal(game.state.phase, 'won', `level=${level}, upgrades=${JSON.stringify(upgrades)}, time=${game.state.time.toFixed(1)}`);
+    assert.ok(game.state.time < 300);
+    coins += game.state.result.reward;
+  }
+  assert.equal(equipment.staff, 'storm_staff');
+  assert.equal(equipment.ring, 'harvest_ring');
 });
 
 for (let level = 1; level <= 24; level++) {

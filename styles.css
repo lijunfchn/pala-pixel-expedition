@@ -60,6 +60,16 @@ dialog{width:min(850px,calc(100vw - 32px))}
 @media(max-width:480px){.site-header nav{gap:13px}.nav-button{font-size:11px;color:#b9c9b5}.equipment-card,.codex-card{padding:10px}.equipment-copy p,.codex-card p{font-size:10px}.codex-stats{font-size:9px}}
 
 /* The independent survival run sits beside campaign progression. */
+.mission-intel{padding:15px 30px 17px;background:#1a2a22;border-top:1px solid #3d5038}
+.intel-heading,.intel-record{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:10px;line-height:1.7;color:#a7b99e}
+.intel-heading b{font-weight:500;color:#e5cb8e;letter-spacing:1px}.intel-heading span{color:#b7c8aa}
+.intel-enemies{display:flex;flex-wrap:wrap;gap:6px 14px;margin:9px 0 8px}.intel-enemy{display:flex;align-items:center;gap:5px;font-size:10px;color:#c8d3bd}.intel-enemy canvas{width:29px;height:29px}
+.intel-record{border-top:1px solid #344a34;padding-top:8px;font-size:9px}.intel-record>span:first-child{color:#d8bd82}
+.speed-button{font:13px var(--pixel);color:#d6c58d}.speed-button[aria-pressed=true]{border-color:#cbaa68;background:#3b4730;color:#f4d999}.speed-button:disabled{opacity:.4}
+.battle-info{right:23%;justify-content:flex-start;flex-wrap:wrap;gap:5px}.battle-info>span{font-size:10px;padding:6px 9px;letter-spacing:.3px}
+@media(max-width:760px){.mission-intel{padding:12px 16px}.battle-hud{gap:11px}.battle-info{right:29%;gap:3px}.battle-info>span{font-size:8px;padding:4px 6px}.intel-heading,.intel-record{font-size:9px}}
+@media(max-width:480px){.battle-hud{gap:6px}.battle-hud .icon-button{width:29px;height:29px}.battle-hud .speed-button{font-size:11px}.battle-info{right:33%;left:9px;top:8px}.battle-info>span{font-size:7px;padding:3px 4px}.intel-enemies{gap:4px 10px}.intel-enemy{font-size:9px}.intel-enemy canvas{width:24px;height:24px}.intel-record{gap:3px}}
+
 .survival-section{display:flex;align-items:center;gap:22px;margin-top:18px;padding:21px 26px;border:1px solid #62684e;background:linear-gradient(110deg,#2c3330,#1c2929 70%,#2a3129)}
 .survival-emblem{display:grid;place-items:center;flex:0 0 64px;width:64px;height:64px;border:1px solid #b59a65;box-shadow:inset 0 0 0 4px #384238;color:#e4c787;font:48px var(--pixel);line-height:1}
 .survival-copy{flex:1;min-width:0}.survival-copy h2{margin:5px 0;font-size:19px;letter-spacing:2px}.survival-copy p{margin:0 0 8px;font-size:11px;line-height:1.65;color:#bdc9b8}.survival-copy>span{font:10px var(--pixel);color:#dfc385}.survival-section .primary-button{flex:0 0 auto}

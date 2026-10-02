@@ -42,6 +42,7 @@
           <div class="resource health"><span class="resource-icon">♥</span><div><span class="resource-label">帕拉 · 生命 <b id="health-text">0 / 0</b></span><div class="meter"><i id="health-fill"></i></div></div></div>
           <div class="resource food"><span class="resource-icon">◆</span><div><span class="resource-label">召唤食物 <b id="food-text">0 / 0</b></span><div class="meter"><i id="food-fill"></i></div></div></div>
           <div class="resource mana"><span class="resource-icon">✦</span><div><span class="resource-label">魔法能量 <b id="mana-text">0 / 0</b></span><div class="meter"><i id="mana-fill"></i></div></div></div>
+          <button id="speed-button" class="icon-button speed-button" aria-label="切换为双倍战斗速度" aria-pressed="false" title="战斗速度 · F">1×</button>
           <button id="pause-button" class="icon-button" aria-label="暂停游戏" title="暂停 · Esc">Ⅱ</button>
         </div>
 
@@ -66,6 +67,8 @@
           <button class="primary-button" id="start-button">开始远征 <span>→</span></button>
         </div>
 
+        <div id="mission-intel" class="mission-intel" aria-label="战前情报"></div>
+
         <div id="battle-controls" class="battle-controls" hidden>
           <div class="command-group"><div class="command-heading">召集伙伴 <small>数字键 1 — 8</small><span id="army-count">0 / 28</span></div><div id="unit-buttons" class="unit-buttons"></div></div>
           <div class="command-group spells-group"><div class="command-heading">圣光魔法 <small>J / K / L</small></div><div id="spell-buttons" class="spell-buttons"></div></div>
@@ -89,7 +92,7 @@
         <div id="companion-list" class="companion-list"></div>
       </section>
 
-      <footer><span><i class="status-dot"></i><span id="save-status">进度自动保存在当前浏览器</span></span><span id="footer-hint">键盘 / 鼠标 / 触控 <span class="footer-separator">·</span> VERSION 2.3</span></footer>
+      <footer><span><i class="status-dot"></i><span id="save-status">进度自动保存在当前浏览器</span></span><span id="footer-hint">键盘 / 鼠标 / 触控 <span class="footer-separator">·</span> VERSION 2.4</span></footer>
     </main>
   </div>
   <dialog id="modal" aria-labelledby="modal-title"><div class="modal-top"><span class="eyebrow">PALADOG · PIXEL CHRONICLES</span><button id="close-modal" class="icon-button" aria-label="关闭窗口">×</button></div><div id="modal-content"></div></dialog>

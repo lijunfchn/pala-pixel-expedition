@@ -121,6 +121,24 @@
   };
 
   const clamp = function (value, low, high) { return Math.max(low, Math.min(high, value)); };
+  Pala.enemyRoster = function (levelId) {
+    const tier = clamp(Math.floor(Number(levelId) || 1), 1, levels.length);
+    const roster = ['skeleton', 'skeleton', 'slime'];
+    if (tier >= 2) roster.push('bat');
+    if (tier >= 4) roster.push('brute');
+    if (tier >= 5) roster.push('necromancer');
+    if (tier >= 13) roster.push('archer', 'wraith');
+    if (tier >= 15) roster.push('hound');
+    if (tier >= 17) roster.push('sentinel', 'shaman');
+    if (tier >= 19) roster.push('bomber', 'bomber');
+    return roster;
+  };
+  const survivalFormations = [
+    { name: '常规', description: '敌军混合推进，保持前后排协作。' },
+    { name: '疾袭', description: '快速与飞行敌人来袭，保留对空火力。', kinds: ['skeleton', 'bat', 'wraith', 'hound', 'bomber'] },
+    { name: '重甲', description: '厚血前排推进，集中火力并及时治疗。', kinds: ['skeleton', 'slime', 'brute', 'sentinel'] },
+    { name: '秘术', description: '远程与召唤敌人集结，利用范围法术清场。', kinds: ['skeleton', 'necromancer', 'archer', 'shaman'] }
+  ];
 
   class Engine {
     constructor(options) {
@@ -154,7 +172,7 @@
         },
         units: [], tower: this.mode === 'survival' ? null : { id: 'tower', kind: 'tower', side: 'enemy', x: 2280, y: 0, hp: this.level.towerHp, maxHp: this.level.towerHp, facing: -1, range: 380, attackTimer: 2, hitFlash: 0, shielded: this.level.boss, reinforced: false },
         projectiles: [], effects: [], cooldowns: {}, worldWidth: this.mode === 'survival' ? 1500 : 2400, level: this.mode === 'survival' ? { id: 0, name: '无尽生存', biome: 'night' } : this.level, maxUnits: 28,
-        mode: this.mode, survivalChoices: [], nextWaveIn: this.nextWaveAt, result: null
+        mode: this.mode, survivalChoices: [], nextWaveIn: this.nextWaveAt, formationName: '常规', formationDescription: survivalFormations[0].description, result: null
       };
       units.concat(spells).forEach((item) => { this.state.cooldowns[item.id] = 0; });
     }
@@ -171,6 +189,16 @@
     effect(kind, x, y, radius, side) {
       const life = kind === 'frost' ? 0.9 : kind === 'heal' ? 0.8 : kind === 'bolt' ? 0.48 : 0.4;
       this.state.effects.push({ id: 'effect-' + this.nextId++, kind: kind, x: x, y: y || 0, radius: radius || 28, side: side || 'ally', age: 0, life: life, maxLife: life });
+    }
+
+    numberEffect(target, amount, healing) {
+      if (amount <= 0) return;
+      const effects = this.state.effects;
+      const existing = effects.find(effect => effect.kind === 'number' && effect.entityId === target.id && effect.healing === healing && effect.age < 0.12);
+      if (existing) { existing.amount += amount; return; }
+      const numbers = effects.filter(effect => effect.kind === 'number');
+      if (numbers.length >= 32) effects.splice(effects.indexOf(numbers[0]), 1);
+      effects.push({ id: 'effect-' + this.nextId++, kind: 'number', entityId: target.id, x: target.x, y: target.y - 42, amount: amount, side: target.side, healing: healing, age: 0, life: 0.85, maxLife: 0.85 });
     }
 
     summon(unitId) {
@@ -200,7 +228,9 @@
         const friends = [hero].concat(state.units.filter(function (unit) { return unit.side === 'ally' && unit.hp > 0 && Math.abs(unit.x - hero.x) <= spell.radius; }));
         if (!friends.some(function (unit) { return unit.hp < unit.maxHp; })) return false;
         friends.forEach((unit) => {
+          const before = unit.hp;
           unit.hp = Math.min(unit.maxHp, unit.hp + spell.healing + this.upgrades.focus * 12 + (this.staff.healBonus || 0));
+          this.numberEffect(unit, unit.hp - before, true);
           this.effect('heal', unit.x, unit.y, 36);
         });
         target = hero;
@@ -235,7 +265,9 @@
       if (this.mode !== 'survival' || !state.paused || !state.survivalChoices.includes(id)) return false;
       if (id === 'heart') {
         state.hero.maxHp += 65;
+        const before = state.hero.hp;
         state.hero.hp = Math.min(state.hero.maxHp, state.hero.hp + 120);
+        this.numberEffect(state.hero, state.hero.hp - before, true);
       } else if (id === 'supplies') {
         state.maxFood += 25;
         state.foodRegen += 0.7;
@@ -282,22 +314,19 @@
       if (this.mode === 'survival') this.bossSpawned = false;
       const tier = this.mode === 'survival' ? Math.min(24, Math.floor(state.wave * 1.5)) : this.level.id;
       const count = this.mode === 'survival' ? Math.min(12, 3 + Math.floor(state.wave * 0.7)) : Math.min(5, 2 + Math.floor((this.level.id - 1) / 3)) + (state.wave % 2 === 0 ? 1 : 0);
-      const roster = ['skeleton', 'skeleton', 'slime'];
-      if (tier >= 2) roster.push('bat');
-      if (tier >= 4) roster.push('brute');
-      if (tier >= 5) roster.push('necromancer');
-      if (tier >= 13) roster.push('archer', 'wraith');
-      if (tier >= 15) roster.push('hound');
-      if (tier >= 17) roster.push('sentinel', 'shaman');
-      if (tier >= 19) roster.push('bomber', 'bomber');
+      const formation = survivalFormations[this.mode === 'survival' ? (state.wave - 1) % survivalFormations.length : 0];
+      state.formationName = formation.name;
+      state.formationDescription = formation.description;
+      const roster = Pala.enemyRoster(tier).filter(kind => !formation.kinds || formation.kinds.includes(kind));
+      const spawnX = this.mode === 'survival' && state.wave > 1 ? clamp(state.hero.x + 600, 650, state.worldWidth - 110) : undefined;
       for (let i = 0; i < count; i++) {
         const kind = roster[Math.floor(this.random() * roster.length)];
-        this.spawnQueue.push({ at: state.time + i * 0.8, kind: kind });
+        this.spawnQueue.push({ at: state.time + i * 0.8, kind: kind, x: spawnX });
       }
       const boss = this.mode === 'survival' ? state.wave % 5 === 0 : this.level.boss && state.wave === state.waveCount && !this.bossSpawned;
-      if (boss) this.spawnQueue.push({ at: state.time + count * 0.8, kind: 'boss' });
+      if (boss) this.spawnQueue.push({ at: state.time + count * 0.8, kind: 'boss', x: spawnX });
       this.nextWaveAt = this.mode === 'survival' ? Infinity : state.time + this.level.waveInterval;
-      this.emit('wave', { wave: state.wave, waveCount: state.waveCount, boss: boss });
+      this.emit('wave', { wave: state.wave, waveCount: state.waveCount, boss: boss, formationName: formation.name, formationDescription: formation.description });
     }
 
     reinforceTower() {
@@ -349,14 +378,17 @@
       if (target.side === 'ally' && target.kind !== 'hero' && Math.abs(target.x - state.hero.x) <= state.hero.auraRadius) amount *= 0.88;
       if (target.armor) amount *= 1 - target.armor;
       amount = Math.max(1, amount);
+      const before = target.hp;
       target.hp = Math.max(0, target.hp - amount);
-      target.hitFlash = 0.13;
-      this.effect('hit', target.x, target.y - 18, Math.min(36, 12 + amount * 0.2), source.side);
-      this.emit('hit', { sourceId: source.id, targetId: target.id, damage: amount, x: target.x, y: target.y, side: source.side });
       if (target.kind === 'tower' && !this.towerReinforced && target.hp <= target.maxHp / 2) {
         target.hp = Math.max(target.hp, target.maxHp / 2);
         this.reinforceTower();
       }
+      amount = before - target.hp;
+      target.hitFlash = 0.13;
+      this.effect('hit', target.x, target.y - 18, Math.min(36, 12 + amount * 0.2), source.side);
+      this.numberEffect(target, amount, false);
+      this.emit('hit', { sourceId: source.id, targetId: target.id, damage: amount, x: target.x, y: target.y, side: source.side });
       if (target.hp <= 0) {
         this.effect('death', target.x, target.y, target.kind === 'boss' ? 85 : 35, target.side);
         if (target.kind === 'hero') this.finish('lost');
@@ -409,7 +441,7 @@
         });
       } else {
         this.damage(target, damage, attacker);
-        if (charged && target.hp > 0 && !target.flying) target.x = clamp(target.x + (attacker.side === 'ally' ? 80 : -80), 50, 2240);
+        if (charged && target.hp > 0 && !target.flying) target.x = clamp(target.x + (attacker.side === 'ally' ? 80 : -80), 40, this.state.worldWidth - 80);
         if (target.thorns && target.hp > 0 && attacker.hp > 0 && this.state.phase === 'playing') this.damage(attacker, damage * target.thorns, target);
         if (attacker.splash && this.state.phase === 'playing') {
           const others = [this.state.hero].concat(this.state.units);
@@ -458,7 +490,7 @@
       if (state.wave < state.waveCount && state.time >= this.nextWaveAt) this.startWave();
       for (const spawn of this.spawnQueue) {
         if (spawn.at <= state.time && !spawn.done) {
-          if (spawn.kind !== 'boss' || !this.bossSpawned) this.spawnEnemy(spawn.kind);
+          if (spawn.kind !== 'boss' || !this.bossSpawned) this.spawnEnemy(spawn.kind, spawn.x);
           spawn.done = true;
         }
       }
@@ -493,7 +525,9 @@
             unit.state = 'walk';
           } else unit.state = 'idle';
           if (wounded && unit.attackTimer <= 0) {
+            const before = wounded.hp;
             wounded.hp = Math.min(wounded.maxHp, wounded.hp + unit.healing * (1 + this.upgrades.focus * 0.08));
+            this.numberEffect(wounded, wounded.hp - before, true);
             unit.attackTimer = unit.attackInterval;
             unit.state = 'attack';
             this.effect('heal', wounded.x, wounded.y, 32);
@@ -508,7 +542,9 @@
               .sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
             if (wounded) {
               const tier = this.mode === 'survival' ? Math.min(24, Math.max(1, Math.floor(state.wave * 1.5))) : this.level.id;
+              const before = wounded.hp;
               wounded.hp = Math.min(wounded.maxHp, wounded.hp + unit.healing * (1 + tier * 0.04));
+              this.numberEffect(wounded, wounded.hp - before, true);
               this.effect('heal', wounded.x, wounded.y, 30, 'enemy');
               this.emit('heal', { sourceId: unit.id, targetId: wounded.id, x: wounded.x });
             }

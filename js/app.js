@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  const { DATA, Engine, Renderer, Audio, Storage, upgradeCost } = window.Pala;
+  const { DATA, Engine, Renderer, Audio, Storage, upgradeCost, enemyRoster } = window.Pala;
   const $ = id => document.getElementById(id);
   const renderer = new Renderer($('game-canvas'));
   const sound = new Audio();
@@ -16,6 +16,7 @@
   let accumulator = 0;
   let uiElapsed = 0;
   let campTime = 0;
+  let battleSpeed = 1;
   let toastTimer;
   let resumeAfterModal = false;
   const keys = new Set();
@@ -67,6 +68,11 @@
     $('mission-reward').textContent = `${save.completed.includes(selectedLevel) ? Math.floor(level.reward * 0.4) : level.reward} 金币`;
     $('mission-reward').parentElement.firstChild.textContent = save.completed.includes(selectedLevel) ? '重访奖励 ' : '首通奖励 ';
     $('mission-gear').textContent = `装备 ${equipmentById(save.equipped.staff).name} · ${equipmentById(save.equipped.ring).name}`;
+    const roster = enemyRoster(selectedLevel);
+    const enemyKinds = [...new Set(roster.concat(level.boss ? ['boss'] : []))];
+    const bestTime = save.bestTimes[selectedLevel];
+    $('mission-intel').innerHTML = `<div class="intel-heading"><b>战前情报</b><span>${level.waveCount} 波敌军 · 据点 ${level.towerHp} 生命${level.boss ? ' · 先击败首领解除护盾' : ''}</span></div><div class="intel-enemies">${enemyKinds.map(kind => `<span class="intel-enemy" title="${DATA.enemyIntel[kind].counter}"><canvas width="32" height="32" data-icon="${kind}" aria-hidden="true"></canvas>${DATA.enemies[kind].name}</span>`).join('')}</div><div class="intel-record"><span>${save.completed.includes(selectedLevel) ? `最佳评价 ${'★'.repeat(save.stars[selectedLevel] || 1)}${'☆'.repeat(3 - (save.stars[selectedLevel] || 1))} · 最佳用时 ${bestTime ? formatTime(bestTime) : '尚未记录'}` : '三星目标：胜利时帕拉生命不低于 60%'}</span><span>${enemyKinds.some(kind => DATA.enemies[kind].flying) ? '带上游侠或法师应对飞行敌人' : '前排承伤，远程输出；半血据点会召来援军'}</span></div>`;
+    $('mission-intel').querySelectorAll('canvas').forEach(canvas => icon(canvas, canvas.dataset.icon));
     $('start-button').innerHTML = `${save.completed.includes(selectedLevel) ? '重访此地' : '开始远征'} <span>→</span>`;
     const stageButton = item => {
       const done = save.completed.includes(item.id);
@@ -97,10 +103,10 @@
     keys.clear();
     pointers.clear();
     document.body.classList.remove('battle-mode');
-    ['camp-intro', 'camp-scene-label', 'mission-panel', 'survival-section', 'campaign-section', 'companions-section'].forEach(id => { $(id).hidden = false; });
+    ['camp-intro', 'camp-scene-label', 'mission-panel', 'mission-intel', 'survival-section', 'campaign-section', 'companions-section'].forEach(id => { $(id).hidden = false; });
     ['battle-hud', 'battle-controls', 'battle-info', 'battle-tip', 'battle-overlay'].forEach(id => { $(id).hidden = true; });
     $('camp-button').disabled = false;
-    $('footer-hint').innerHTML = '键盘 / 鼠标 / 触控 <span class="footer-separator">·</span> VERSION 2.3';
+    $('footer-hint').innerHTML = '键盘 / 鼠标 / 触控 <span class="footer-separator">·</span> VERSION 2.4';
     renderCampUI();
   }
 
@@ -126,25 +132,27 @@
     keys.clear();
     pointers.clear();
     resultHandled = false;
+    battleSpeed = 1;
     accumulator = 0;
     engine = new Engine({ mode: battleMode, seed: battleMode === 'survival' ? Date.now() : undefined, level: battleMode === 'survival' ? 1 : selectedLevel, upgrades: save.upgrades, equipment: save.equipped, unlockedLevel: save.unlocked, onEvent: event => {
       if (['summon', 'cast', 'wave', 'win', 'lose'].includes(event.type)) sound.play(event.type);
       else if (event.type === 'hit' && event.side === 'ally') sound.play('hit');
       if (event.type === 'reinforcement') { sound.play('wave'); notify(`据点半血警报！${event.count} 名守军赶来增援。`); }
       if (event.type === 'wave' && event.boss) { sound.setScene('boss'); notify(battleMode === 'survival' ? `第 ${event.wave} 波首领来袭！` : '暗影领主出现了！保护帕拉，集中火力。'); }
+      else if (event.type === 'wave' && battleMode === 'survival' && event.formationName) notify(`第 ${event.wave} 波 · ${event.formationName}：${event.formationDescription}`);
       if (event.type === 'kill' && event.kind === 'boss') sound.setScene(battleMode === 'survival' ? 'survival' : 'battle');
       if (event.type === 'survivalChoice') showSurvivalChoice();
     } });
     sound.setScene(battleMode === 'survival' ? 'survival' : 'battle');
     mode = 'battle';
     document.body.classList.add('battle-mode');
-    ['camp-intro', 'camp-scene-label', 'mission-panel', 'survival-section', 'campaign-section', 'companions-section', 'battle-overlay'].forEach(id => { $(id).hidden = true; });
+    ['camp-intro', 'camp-scene-label', 'mission-panel', 'mission-intel', 'survival-section', 'campaign-section', 'companions-section', 'battle-overlay'].forEach(id => { $(id).hidden = true; });
     ['battle-hud', 'battle-controls', 'battle-info', 'battle-tip'].forEach(id => { $(id).hidden = false; });
     $('battle-tip').textContent = battleMode === 'survival' ? '守住帕拉，清空敌军后进入下一波。所有伙伴均可召唤。' : '先按 1、2 召唤伙伴，再按 D 随队推进。光环会强化附近友军。';
     $('chapter-label').textContent = battleMode === 'survival' ? '无尽生存 / 暗影潮汐' : `${chapters[Math.floor((selectedLevel - 1) / 4)].label} · 第 ${String(selectedLevel).padStart(2, '0')} 关`;
     $('battle-mission').textContent = battleMode === 'survival' ? '暗影潮汐 / 击退敌军 · 挑战极限' : `${engine.state.level.name} / ${engine.state.level.boss ? '击败首领 · 摧毁据点' : '摧毁暗影据点'}`;
     $('camp-button').disabled = true;
-    $('footer-hint').textContent = 'A / D 移动 · 1—8 召唤 · J K L 魔法 · Esc 暂停';
+    $('footer-hint').textContent = 'A / D 移动 · 1—8 召唤 · J K L 魔法 · F 战速 · Esc 暂停';
     buildAbilities();
     updateHUD();
     $('pause-button').focus({ preventScroll: true });
@@ -171,7 +179,15 @@
     });
     const army = state.units.filter(unit => unit.side === 'ally' && unit.hp > 0).length;
     $('army-count').textContent = `${army} / ${state.maxUnits}`;
-    $('battle-wave').textContent = state.mode === 'survival' ? `生存第 ${Math.max(0, state.wave)} 波 · ${formatTime(state.time)}` : `波次 ${Math.max(0, state.wave)} / ${state.waveCount} · ${formatTime(state.time)}`;
+    const countdown = Number.isFinite(state.nextWaveIn) ? `下一波 ${Math.ceil(state.nextWaveIn)} 秒` : '';
+    if (state.mode === 'survival') {
+      const remaining = state.units.filter(unit => unit.side === 'enemy' && unit.hp > 0).length + engine.spawnQueue.length;
+      $('battle-wave').textContent = `第 ${Math.max(0, state.wave)} 波${state.formationName ? ' · ' + state.formationName : ''} · ${countdown || `剩余 ${remaining} 名敌军`} · ${formatTime(state.time)}`;
+    } else $('battle-wave').textContent = `波次 ${Math.max(0, state.wave)} / ${state.waveCount} · ${state.wave < state.waveCount ? countdown : '末波已到'} · ${formatTime(state.time)}`;
+    $('speed-button').textContent = `${battleSpeed}×`;
+    $('speed-button').setAttribute('aria-pressed', String(battleSpeed === 2));
+    $('speed-button').setAttribute('aria-label', `切换为${battleSpeed === 1 ? '双倍' : '正常'}战斗速度`);
+    $('speed-button').disabled = state.phase !== 'playing';
     DATA.units.concat(DATA.spells).forEach(item => {
       const ref = buttonRefs.get(item.id);
       const cooldown = state.cooldowns[item.id] || 0;
@@ -188,6 +204,14 @@
 
   function formatTime(time) {
     return `${Math.floor(time / 60).toString().padStart(2, '0')}:${Math.floor(time % 60).toString().padStart(2, '0')}`;
+  }
+
+  function toggleSpeed() {
+    if (!engine || engine.state.phase !== 'playing' || $('modal').open) return;
+    battleSpeed = battleSpeed === 1 ? 2 : 1;
+    sound.play('click');
+    updateHUD();
+    notify(`战斗速度 ${battleSpeed}× · F 可切换`);
   }
 
   function overlay(html) {
@@ -392,11 +416,12 @@
       <div class="manual-row"><span>K · 生命祷言</span><span>治疗帕拉和附近受伤的伙伴。</span></div>
       <div class="manual-row"><span>L · 寒霜领域</span><span>伤害敌群，并降低其移动速度。</span></div>
       <div class="manual-row"><span>Esc / 空格</span><span>暂停或继续。切换窗口时自动暂停。</span></div>
+      <div class="manual-row"><span>F · 战斗速度</span><span>切换 1× / 2×。出兵、移动和敌军同速变化；用时按游戏内时间记录，每次出发恢复 1×。</span></div>
       <h3 class="manual-subtitle">组合你的队伍</h3>
       <p>松果投手的爆裂攻击适合清理群怪；荆刺守卫能反弹近战伤害；月羽医师会治疗伤员；破晓野猪可冲散敌阵。飞行敌人需要游侠、法师或投手处理。后期的祭司会为敌军治疗，裂火虫倒下时会引发爆炸。</p>
       <p>“装备与强化”可购买并切换帕拉的权杖与戒指；远征图鉴记录兵种和怪物的基础属性与应对方法。敌方据点首次降到半血会召集守军增援。</p>
       <h3 class="manual-subtitle">无尽生存</h3>
-      <p>从营地进入，逐波清除敌军；每三波从三项随机祝福中选一项，每五波出现首领。祝福只在本次挑战生效，当前装备与营地强化会带入战斗。帕拉阵亡后按守住的波次与击退敌人结算金币，并保存最佳纪录；战役进度不会改变。</p>
+      <p>从营地进入，逐波清除敌军；疾袭、重甲与秘术编队轮换，每三波从三项随机祝福中选一项，每五波出现首领。第二波起敌军根据帕拉的站位从前方进场，留意波次提示。祝福只在本次挑战生效，当前装备与营地强化会带入战斗。帕拉阵亡后按守住的波次与击退敌人结算金币，并保存最佳纪录；战役进度不会改变。</p>
       <p class="manual-note">英雄阵亡即失败。首领关必须先击败暗影领主，才可击破带护盾的据点。胜利解锁下一关并获得金币；营地升级和已购买装备永久保留。重访关卡可获得 40% 金币。星级取决于获胜时帕拉的剩余生命。</p>
       <p>进度保存在当前浏览器。切换浏览器、访问地址或清理网站数据可能影响存档。</p>`);
   }
@@ -417,6 +442,7 @@
   $('map-button').addEventListener('click', () => { if (mode === 'battle') confirmLeave(); else renderCampUI(); });
   $('brand-home').addEventListener('click', event => { event.preventDefault(); if (mode === 'battle') confirmLeave(); });
   $('pause-button').addEventListener('click', pauseBattle);
+  $('speed-button').addEventListener('click', toggleSpeed);
   $('close-modal').addEventListener('click', () => $('modal').close());
   $('modal').addEventListener('close', () => {
     if (resumeAfterModal && engine?.state.phase === 'playing') resumeBattle();
@@ -442,6 +468,7 @@
     const battleActive = engine.state.phase === 'playing';
     if (battleActive && ['ArrowLeft', 'ArrowRight', 'Space', 'Escape'].includes(event.code)) event.preventDefault();
     if (battleActive && ['Escape', 'Space'].includes(event.code)) { if (!event.repeat) pauseBattle(); return; }
+    if (battleActive && event.code === 'KeyF' && !event.ctrlKey && !event.altKey && !event.metaKey) { event.preventDefault(); if (!event.repeat) toggleSpeed(); return; }
     if (!battleActive || engine.state.paused) return;
     keys.add(event.code);
     if (event.repeat) return;
@@ -479,7 +506,7 @@
       if (!engine.state.paused && engine.state.phase === 'playing') {
         const left = keys.has('KeyA') || keys.has('ArrowLeft') || [...pointers.values()].includes(-1);
         const right = keys.has('KeyD') || keys.has('ArrowRight') || [...pointers.values()].includes(1);
-        accumulator += dt;
+        accumulator += dt * battleSpeed;
         while (accumulator >= 1 / 60) { engine.update(1 / 60, { move: Number(right) - Number(left) }); accumulator -= 1 / 60; }
       }
       renderer.render(engine.state, dt);
